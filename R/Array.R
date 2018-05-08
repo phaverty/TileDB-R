@@ -42,6 +42,10 @@ domain_subarray <- function(dom, i, j, ...) {
     j <- integer(0)
   }
   indices <- list(i, j, ...)
+  #print(indices)
+  indices <- indices[sapply(indices, length) > 0]
+  #print("DEBUG: sapply indicies")
+  #print(indices)
   indices <- indices[sapply(indices, length) > 0]
   stopifnot(is.list(indices))
   if (any(is.na(unlist(indices)))) {
@@ -50,7 +54,7 @@ domain_subarray <- function(dom, i, j, ...) {
   if(any(unlist(indices) < 1L)) {
     stop("Elements of parameter elem must be greater or equal than one.")
   }
-  if (length(indices) > length(dim(dom))) {
+  if (length(indices) > tiledb::ndim(dom)) {
     stop("incorrect number of dimensions")
   }
   # Calculate contiguous index selections
@@ -61,6 +65,7 @@ domain_subarray <- function(dom, i, j, ...) {
                       else 
                         1
                      })
+  
   #print("DEBUG: startidx: ")
   #print(startidx)
   count <- lapply(1:length(startidx), function(i) 
@@ -141,45 +146,100 @@ attribute_buffers <- function(sch, dom, sub) {
   return(attrs)
 }
 
+#' @export
+subset_dense_subarray <- function(dom, i, j, ..., drop = TRUE) {
+  nd <- tiledb::ndim(dom)
+  dims <- tiledb::dimensions(dom)
+  subs <- list()
+  if (nd == 1) {
+    if (!missing(j) && !missing(...)) {
+      stop("incorrect number of dimensions")
+    }
+    dim_dom <- tiledb::domain(dims[[1L]])
+    # if index is mssing, return sub of whole domain
+    if (missing(i)) {
+      subs[[1L]] <- dim_dom
+    } else {
+      subs[[1L]] <- dim_domain_subarray(dim_dom, i);
+    }
+  } else if (nd == 2) {
+    if (!missing(...))  {
+      stop("incorrect number of dimensions")
+    }
+    dim_dom1 <- tiledb::domain(dims[[1L]])
+    dim_dom2 <- tiledb::domain(dims[[2L]])
+    # check if subscript is missing, return the whole dimension domain for missing subscript
+    if (missing(i)) {
+      subs[[1L]] <- dim_dom1
+    } else {
+      subs[[1L]] <- dim_domain_subarray(dim_dom1, i);
+    }
+    if (missing(j)) {
+      subs[[2L]] <- dim_dom2
+    } else {
+      subs[[2L]] <- dim_domain_subarray(dim_dom2, j)
+    }
+  } else if (nd >= 3) {
+    print("DEBUG nd >=3")
+    print(list(i, j, ...))  
+    stop("unimplemented")
+  }
+  return(subs)
+}
+
 setMethod("[", "Array",
-          function(x, i, j, ...) {
-            ctx <- x@ctx
-            schema <- x@schema
-            uri <- x@uri
+          function(x, i, j, ..., drop = FALSE) {
+            # return the .GlobalEnv to extract the indexing expression
+            # we drop the first two expressions `[` (the function call)
+            # and the bound variable the index function is being called on
+            index <- as.list(sys.call())[-c(-1, 2)]
+            for (i in seq_along(index)) {
+              # if index is missing, replace it with a NULL
+              if (index[[i]] == '') {
+                index[i] <- list(c())
+              } 
+            }
+            # if there is only one null index element, all indices are missing
+            # ex. arr[], return the full domain
+            if (length(index) == 1) {
+              if (is.null(index[[1]])) {
+                index <- NULL
+              }  
+            }
+             
+            dom <- tiledb::domain(schema)
             if (missing(i) && missing(j)) {
-              result <- array(0, dim(schema))
-              attr_name <- name(attrs(schema)[[1L]])
-              qry <- tiledb_query(ctx@ptr, uri, "READ")
-              qry <- tiledb_query_set_layout(qry, "COL_MAJOR")
-              qry <- tiledb_query_set_buffer(qry, attr_name, result)
-              qry <- tiledb_query_submit(qry)
-              if (tiledb_query_status(qry) != "COMPLETE") {
-                stop("error in read query")
+              nd <- tiledb::ndim(dom)
+              sub <- integer(length = 2 * nd)
+              dims <- tiledb::dimensions(dom)
+              for (i in 1L:nd) {
+                idx <- (i - 1L) * 2L + 1L
+                dim_domain <- tiledb::domain(dims[[i]])
+                sub[idx] <- dim_domain[1L]
+                sub[idx + 1L] <- dim_domain[2L]
               }
-              return(result);
             } else {
-              dom <- domain(schema)
               if (!tiledb::is.integral(dom)) {
                 stop("subscript indexing only valid for integral Domain's")  
               }
               sub <- domain_subarray(dom, i, j, ...)
-              buffers <- attribute_buffers(schema, dom, sub)
-              qry <- tiledb_query(ctx@ptr, uri, "READ")
-              qry <- tiledb_query_set_layout(qry, "COL_MAJOR")
-              qry <- tiledb_query_set_subarray(qry, as.integer(sub))
-              for (attr_name in names(buffers)) {
-                qry <- tiledb_query_set_buffer(qry, attr_name, buffers[[attr_name]])
-              }
-              qry <- tiledb_query_submit(qry)
-              if (tiledb_query_status(qry) != "COMPLETE") {
-                stop("error in read query")
-              }
-              # if there is only one buffer, don't return a list of attribute buffers
-              if (length(buffers) == 1L) {
-                return(buffers[[1L]])
-              }
-              return(buffers)
-            }           
+            }
+            buffers <- attribute_buffers(schema, dom, sub)
+            qry <- tiledb_query(ctx@ptr, uri, "READ")
+            qry <- tiledb_query_set_layout(qry, "COL_MAJOR")
+            qry <- tiledb_query_set_subarray(qry, as.integer(sub))
+            for (attr_name in names(buffers)) {
+              qry <- tiledb_query_set_buffer(qry, attr_name, buffers[[attr_name]])
+            }
+            qry <- tiledb_query_submit(qry)
+            if (tiledb_query_status(qry) != "COMPLETE") {
+              stop("error in read query")
+            }
+            # if there is only one buffer, don't return a list of attribute buffers
+            if (length(buffers) == 1L) {
+              return(buffers[[1L]])
+            }
+            return(buffers)
           })
 
 setMethod("[<-", "Array",
