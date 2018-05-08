@@ -187,47 +187,86 @@ subset_dense_subarray <- function(dom, i, j, ..., drop = TRUE) {
   return(subs)
 }
 
+# Adapted from the DelayedArray package
+nd_index_from_syscall <- function(call, env_frame) {
+  index <- lapply(seq_len(length(call) - 2L),
+                  function(idx){
+                    subscript <- call[[2L + idx]]
+                    if (missing(subscript))
+                      return(NULL)
+                    subscript <- eval(subscript, envir = env_frame, enclos = env_frame)
+                    return(subscript)
+                  })
+  argnames <- tail(names(call), n = -2L) 
+  if (!is.null(argnames))
+    index <- index[!(argnames %in% c("drop", "exact", "value"))]
+  if (length(index) == 1L && is.null(index[[1L]]))
+    index <- list() 
+  return(index)
+}
+
+domain_subarray <- function(dom, index = NULL) {
+  stopifnot(is(dom, "Domain"))
+  nd <- tiledb::ndim(dom)
+  dims <- tiledb::dimensions(dom)
+  subarray <- integer(length = 2 * nd)
+  # return the whole domain
+  if (is.null(index) || length(index) == 0L) {
+    for (i in seq_len(nd)) {
+      idx <- (i - 1L) * 2L + 1L
+      dim_domain <- tiledb::domain(dims[[i]])
+      subarray[idx] <- dim_domain[1L]
+      subarray[idx + 1L] <- dim_domain[2L]
+    }
+    return(subarray)
+  }
+  if (length(index) != nd) {
+    stop("incorrect number of dimensions")
+  }
+  dim_subarray <- list()
+  for (i in seq_len(nd)) {
+    dim_domain <- tiledb::domain(dims[[i]])
+    if (is.null(index[[i]])) {
+      # replace NULL (missing) indices with explict ranges based on the domain
+      dim_subarray[[i]] <- dim_domain
+    } else {
+      # compute subarray slices along each dimension
+      dim_subarray[[i]] <- dim_domain_subarray(dim_domain, index[[i]])
+    }
+  }
+  if (!all(sapply(dim_subarray, function(sub) length(sub) == 2L))) {
+    stop("non-contiguous subscript ranges are not supported") 
+  }
+  return(unlist(dim_subarray))
+}
+
 setMethod("[", "Array",
           function(x, i, j, ..., drop = FALSE) {
-            # return the .GlobalEnv to extract the indexing expression
-            # we drop the first two expressions `[` (the function call)
-            # and the bound variable the index function is being called on
-            index <- as.list(sys.call())[-c(-1, 2)]
-            for (i in seq_along(index)) {
-              # if index is missing, replace it with a NULL
-              if (index[[i]] == '') {
-                index[i] <- list(c())
-              } 
-            }
-            # if there is only one null index element, all indices are missing
-            # ex. arr[], return the full domain
-            if (length(index) == 1) {
-              if (is.null(index[[1]])) {
-                index <- NULL
-              }  
-            }
-             
+            ctx <- x@ctx
+            uri <- x@uri
+            schema <- x@schema
+            index <- nd_index_from_syscall(sys.call(), parent.frame())
             dom <- tiledb::domain(schema)
-            if (missing(i) && missing(j)) {
+            if (length(index) == 0L) {
               nd <- tiledb::ndim(dom)
-              sub <- integer(length = 2 * nd)
+              subarray <- integer(length = 2 * nd)
               dims <- tiledb::dimensions(dom)
               for (i in 1L:nd) {
                 idx <- (i - 1L) * 2L + 1L
                 dim_domain <- tiledb::domain(dims[[i]])
-                sub[idx] <- dim_domain[1L]
-                sub[idx + 1L] <- dim_domain[2L]
+                subarray[idx] <- dim_domain[1L]
+                subarray[idx + 1L] <- dim_domain[2L]
               }
             } else {
               if (!tiledb::is.integral(dom)) {
                 stop("subscript indexing only valid for integral Domain's")  
               }
-              sub <- domain_subarray(dom, i, j, ...)
+              subarray <- domain_subarray(dom, index = index)
             }
-            buffers <- attribute_buffers(schema, dom, sub)
+            buffers <- attribute_buffers(schema, dom, subarray)
             qry <- tiledb_query(ctx@ptr, uri, "READ")
             qry <- tiledb_query_set_layout(qry, "COL_MAJOR")
-            qry <- tiledb_query_set_subarray(qry, as.integer(sub))
+            qry <- tiledb_query_set_subarray(qry, as.integer(subarray))
             for (attr_name in names(buffers)) {
               qry <- tiledb_query_set_buffer(qry, attr_name, buffers[[attr_name]])
             }

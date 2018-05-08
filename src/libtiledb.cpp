@@ -594,12 +594,12 @@ NumericVector dim_domain_subarray(NumericVector domain, NumericVector subscript)
   if (domain.length() != 2) {
     throw Rcpp::exception("invalid tiledb::Dimension domain"); 
   }
-  Rcout << "DEBUG: " << std::endl;
-  Rcout << "DEBUG: domain: " << domain << std::endl;
-  Rcout << "DEBUG: subscript: " << subscript << std::endl;
+  // Rcout << "DEBUG: " << std::endl;
+  // Rcout << "DEBUG: domain: " << domain << std::endl;
+  // Rcout << "DEBUG: subscript: " << subscript << std::endl;
   double domain_lb = domain[0];
   double domain_ub = domain[1];
-  Rcout << "DEBUG: domain_lb: " << domain_lb << ", domain_ub: " << domain_ub << std::endl;
+  // Rcout << "DEBUG: domain_lb: " << domain_lb << ", domain_ub: " << domain_ub << std::endl;
 
   auto sub0 = subscript[0];
   if (sub0 == R_NaReal) {
@@ -618,7 +618,7 @@ NumericVector dim_domain_subarray(NumericVector domain, NumericVector subscript)
   for (R_xlen_t i = 1; i < subscript_length; i++) {
     auto low = subscript[i - 1];
     auto high = subscript[i]; 
-    Rcout << "DEBUG: low: " << low << ", high: " << high << std::endl;
+    // Rcout << "DEBUG: low: " << low << ", high: " << high << std::endl;
     if (high == R_NaReal) {
       throw Rcpp::exception("NA subscripting not supported");
     }
@@ -629,7 +629,7 @@ NumericVector dim_domain_subarray(NumericVector domain, NumericVector subscript)
       throw Rcpp::exception(errmsg.str().c_str());
     }
     double diff = high - low;
-    Rcout << "DEBUG: diff: " << diff << std::endl;
+    // Rcout << "DEBUG: diff: " << diff << std::endl;
     if (diff > 1.0 || diff < 1.0) {
       // end one subarray range
       sub.push_back(low);
