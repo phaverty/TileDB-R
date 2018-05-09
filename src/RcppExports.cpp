@@ -572,6 +572,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// tiledb_query_finalize
+XPtr<tiledb::Query> tiledb_query_finalize(XPtr<tiledb::Query> query);
+RcppExport SEXP _tiledb_tiledb_query_finalize(SEXP querySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< XPtr<tiledb::Query> >::type query(querySEXP);
+    rcpp_result_gen = Rcpp::wrap(tiledb_query_finalize(query));
+    return rcpp_result_gen;
+END_RCPP
+}
 // tiledb_query_status
 std::string tiledb_query_status(XPtr<tiledb::Query> query);
 RcppExport SEXP _tiledb_tiledb_query_status(SEXP querySEXP) {
@@ -816,6 +827,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tiledb_tiledb_query_set_subarray", (DL_FUNC) &_tiledb_tiledb_query_set_subarray, 2},
     {"_tiledb_tiledb_query_set_buffer", (DL_FUNC) &_tiledb_tiledb_query_set_buffer, 3},
     {"_tiledb_tiledb_query_submit", (DL_FUNC) &_tiledb_tiledb_query_submit, 1},
+    {"_tiledb_tiledb_query_finalize", (DL_FUNC) &_tiledb_tiledb_query_finalize, 1},
     {"_tiledb_tiledb_query_status", (DL_FUNC) &_tiledb_tiledb_query_status, 1},
     {"_tiledb_tiledb_vfs", (DL_FUNC) &_tiledb_tiledb_vfs, 2},
     {"_tiledb_tiledb_vfs_create_bucket", (DL_FUNC) &_tiledb_tiledb_vfs_create_bucket, 2},

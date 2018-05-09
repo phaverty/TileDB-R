@@ -33,160 +33,6 @@ setMethod("show", "Array",
             invisible(print(object[]))
           })
 
-domain_subarray <- function(dom, i, j, ...) {
-  stopifnot(is(dom, "Domain"))
-  if(missing(i)) {
-    i <- integer(0)
-  }
-  if(missing(j)) {
-    j <- integer(0)
-  }
-  indices <- list(i, j, ...)
-  #print(indices)
-  indices <- indices[sapply(indices, length) > 0]
-  #print("DEBUG: sapply indicies")
-  #print(indices)
-  indices <- indices[sapply(indices, length) > 0]
-  stopifnot(is.list(indices))
-  if (any(is.na(unlist(indices)))) {
-    stop("NAs are not allowed in element coordinates.")
-  }
-  if(any(unlist(indices) < 1L)) {
-    stop("Elements of parameter elem must be greater or equal than one.")
-  }
-  if (length(indices) > tiledb::ndim(dom)) {
-    stop("incorrect number of dimensions")
-  }
-  # Calculate contiguous index selections
-  startidx <- lapply(indices, 
-                     function(x) {
-                      if(length(x) > 1) 
-                        which(c(TRUE, diff(x) > 1)) 
-                      else 
-                        1
-                     })
-  
-  #print("DEBUG: startidx: ")
-  #print(startidx)
-  count <- lapply(1:length(startidx), function(i) 
-    diff(c(startidx[[i]], length(indices[[i]]) + 1)))
-  
-  #print("DEBUG: count: ")
-  #print(count)
-  
-  countsum <- sapply(count, sum)
-  #print("DEBUG: countsum: ")
-  #print(countsum) 
-  
-  startidx <- as.matrix(expand.grid(startidx))
-  #print("DEBUG: startidx: ")
-  #print(startidx)
-  
-  count <- as.matrix(expand.grid(count))
-  #print("DEBUG: count: ")
-  #print(count) 
-  offset <- do.call(cbind, lapply(1:length(indices), 
-                                  function(i) indices[[i]][startidx[, i]]))
-  if (length(dim(offset)[[1]]) != 1) {
-    stop("non-contiguous indices not supported") 
-  }
-  #print("DEBUG: offset: ")
-  #print(offset)
- 
-  ndim <- tiledb::ndim(dom)
-  dims <- dim(dom) 
-  
-  #print("Debug: dims: ")
-  #print(dims)
-  
-  # inclusive indexing
-  sub <- integer(ndim * 2)
-  for (i in 1L:ndim) {
-    start <- offset[[i]]
-    end <- start + (count[[i]] - 1L)
-    idx <- (i - 1L) * 2L + 1L
-    sub[idx] <- start
-    sub[idx + 1L] <- end
-  }
-  #print("Debug: subarray: ")
-  #print(sub)
-  return(sub)
-}
-
-subarray_shape <- function(sub) {
-  len <- length(sub) 
-  if ((len %% 2) != 0){
-    stop("invalid subarray length, must be a multiple of 2")
-  }
-  nd <- as.integer(len / 2)
-  shp <- integer(length = nd)
-  for (i in 1L:nd) {
-    idx <- (i - 1L) * 2L + 1L
-    shp[i] <- sub[idx + 1L] - sub[idx] + 1L
-  }
-  return(shp)
-}
-
-attribute_buffers <- function(sch, dom, sub) {
-  stopifnot(is(sch, "ArraySchema"))
-  stopifnot(is(dom, "Domain"))
-  shp <- subarray_shape(sub)
-  ncells <- prod(shp)
-  scalar <- all(shp == 1L)
-  attrs <- list()
-  for(attr in tiledb::attrs(sch)) {
-    type <- tiledb_datatype_R_type(tiledb::datatype(attr))
-    buff <- vector(mode = type, length = ncells)
-    if (!scalar) {
-      attr(buff, "dim") <- shp
-      #TODO: dimnames
-    }
-    attrs[[tiledb::name(attr)]] <- buff
-  }
-  return(attrs)
-}
-
-#' @export
-subset_dense_subarray <- function(dom, i, j, ..., drop = TRUE) {
-  nd <- tiledb::ndim(dom)
-  dims <- tiledb::dimensions(dom)
-  subs <- list()
-  if (nd == 1) {
-    if (!missing(j) && !missing(...)) {
-      stop("incorrect number of dimensions")
-    }
-    dim_dom <- tiledb::domain(dims[[1L]])
-    # if index is mssing, return sub of whole domain
-    if (missing(i)) {
-      subs[[1L]] <- dim_dom
-    } else {
-      subs[[1L]] <- dim_domain_subarray(dim_dom, i);
-    }
-  } else if (nd == 2) {
-    if (!missing(...))  {
-      stop("incorrect number of dimensions")
-    }
-    dim_dom1 <- tiledb::domain(dims[[1L]])
-    dim_dom2 <- tiledb::domain(dims[[2L]])
-    # check if subscript is missing, return the whole dimension domain for missing subscript
-    if (missing(i)) {
-      subs[[1L]] <- dim_dom1
-    } else {
-      subs[[1L]] <- dim_domain_subarray(dim_dom1, i);
-    }
-    if (missing(j)) {
-      subs[[2L]] <- dim_dom2
-    } else {
-      subs[[2L]] <- dim_domain_subarray(dim_dom2, j)
-    }
-  } else if (nd >= 3) {
-    print("DEBUG nd >=3")
-    print(list(i, j, ...))  
-    stop("unimplemented")
-  }
-  return(subs)
-}
-
 # Adapted from the DelayedArray package
 nd_index_from_syscall <- function(call, env_frame) {
   index <- lapply(seq_len(length(call) - 2L),
@@ -209,9 +55,9 @@ domain_subarray <- function(dom, index = NULL) {
   stopifnot(is(dom, "Domain"))
   nd <- tiledb::ndim(dom)
   dims <- tiledb::dimensions(dom)
-  subarray <- integer(length = 2 * nd)
   # return the whole domain
   if (is.null(index) || length(index) == 0L) {
+    subarray <- integer(length = 2 * nd)
     for (i in seq_len(nd)) {
       idx <- (i - 1L) * 2L + 1L
       dim_domain <- tiledb::domain(dims[[i]])
@@ -240,39 +86,70 @@ domain_subarray <- function(dom, index = NULL) {
   return(unlist(dim_subarray))
 }
 
+subarray_dim <- function(sub) {
+  len <- length(sub) 
+  if ((len %% 2) != 0){
+    stop("invalid subarray length, must be a multiple of 2")
+  }
+  nd <- as.integer(len / 2)
+  sub_dim <- integer(length = nd)
+  for (i in 1L:nd) {
+    idx <- (i - 1L) * 2L + 1L
+    sub_dim[i] <- sub[idx + 1L] - sub[idx] + 1L
+  }
+  return(sub_dim)
+}
+
+attribute_buffers <- function(sch, dom, sub) {
+  stopifnot(is(sch, "ArraySchema"))
+  stopifnot(is(dom, "Domain"))
+  sub_dim <- subarray_dim(sub)
+  ncells <- prod(sub_dim)
+  scalar <- all(sub_dim == 1L)
+  attrs <- list()
+  for(attr in tiledb::attrs(sch)) {
+    type <- tiledb_datatype_R_type(tiledb::datatype(attr))
+    buff <- vector(mode = type, length = ncells)
+    if (!scalar) {
+      attr(buff, "dim") <- sub_dim
+      #TODO: dimnames
+    }
+    attrs[[tiledb::name(attr)]] <- buff
+  }
+  return(attrs)
+}
+
 setMethod("[", "Array",
           function(x, i, j, ..., drop = FALSE) {
+            index <- nd_index_from_syscall(sys.call(), parent.frame())
             ctx <- x@ctx
             uri <- x@uri
             schema <- x@schema
-            index <- nd_index_from_syscall(sys.call(), parent.frame())
             dom <- tiledb::domain(schema)
-            if (length(index) == 0L) {
-              nd <- tiledb::ndim(dom)
-              subarray <- integer(length = 2 * nd)
-              dims <- tiledb::dimensions(dom)
-              for (i in 1L:nd) {
-                idx <- (i - 1L) * 2L + 1L
-                dim_domain <- tiledb::domain(dims[[i]])
-                subarray[idx] <- dim_domain[1L]
-                subarray[idx + 1L] <- dim_domain[2L]
-              }
-            } else {
-              if (!tiledb::is.integral(dom)) {
-                stop("subscript indexing only valid for integral Domain's")  
-              }
-              subarray <- domain_subarray(dom, index = index)
+            if (!tiledb::is.integral(dom)) {
+              stop("subscript indexing only valid for integral Domain's")  
             }
+            subarray <- domain_subarray(dom, index = index)
             buffers <- attribute_buffers(schema, dom, subarray)
             qry <- tiledb_query(ctx@ptr, uri, "READ")
             qry <- tiledb_query_set_layout(qry, "COL_MAJOR")
-            qry <- tiledb_query_set_subarray(qry, as.integer(subarray))
+            if (is.integral(dom)) {
+              qry <- tiledb_query_set_subarray(qry, as.integer(subarray))
+            } else {
+              qry <- tiledb_query_set_subarray(qry, as.double(subarray))
+            }
             for (attr_name in names(buffers)) {
               qry <- tiledb_query_set_buffer(qry, attr_name, buffers[[attr_name]])
             }
             qry <- tiledb_query_submit(qry)
             if (tiledb_query_status(qry) != "COMPLETE") {
               stop("error in read query")
+            }
+            # If true, delete the dimensions of an array which have only one level
+            if (drop) {
+              for (i in seq_len(length(buffers))) {
+                buffers[[i]] <- drop(buffers[[i]])
+              } 
             }
             # if there is only one buffer, don't return a list of attribute buffers
             if (length(buffers) == 1L) {
@@ -283,53 +160,76 @@ setMethod("[", "Array",
 
 setMethod("[<-", "Array",
           function(x, i, j, ..., value) {
+             if (!is.list(value)) { 
+              if (is.array(value) || is.vector(value)) {
+                value <- list(value)
+              } else {
+                stop(paste("cannot assign value of type \"", typeof(value), "\""))
+              }
+            }
+            index <- nd_index_from_syscall(sys.call(), parent.frame())
             ctx <- x@ctx
             schema <- x@schema
             uri <- x@uri
-            if (missing(i) && missing(j)) {
-              if (typeof(value) != "list") {
-                attr_name <- tiledb::name(attrs(schema)[[1L]])
-                value <- list(value)
-                names(value) <- attr_name
+            dom <- tiledb::domain(schema)
+            if (!tiledb::is.integral(dom)) {
+              stop("subscript indexing only valid for integral Domain's")  
+            }
+            subarray <- domain_subarray(dom, index = index)
+            attrs <- tiledb::attrs(schema)
+            if (length(value) > length(attrs)) {
+              stop(paste("invalid number of attribute values (", nvalue, " != ", nattrs, ")"))
+            }
+            attr_names <- names(attrs)
+            value_names <- names(value)
+            if (is.null(value_names)) {
+              # check the list shape / types against attributes
+              nvalue <- length(value)
+              nattrs <- length(attrs)
+              if (length(value) != length(attrs)) {
+                stop(paste("invalid number of attribute values (", nvalue, " != ", nattrs, ")"))
               }
-              qry <- tiledb_query(ctx@ptr, uri, "WRITE") 
-              qry <- tiledb_query_set_layout(qry, "COL_MAJOR")
-              for (i in seq_along(value)) {
-                qry <- tiledb_query_set_buffer(qry, names(value)[i], value[[i]])
-              }
-              qry <- tiledb_query_submit(qry)
-              if (tiledb_query_status(qry) != "COMPLETE") {
-                stop("error in write query") 
-              }
-              return(x);
+              names(value) <- sapply(attr_names, function(n) ifelse(n == "", "__attr", n))
             } else {
-              dom <- tiledb::domain(schema)
-              if (!tiledb::is.integral(dom)) {
-                stop("subscript indexing only valid for integral Domain's")  
-              }
-              sub <- domain_subarray(dom, i, j, ...)
-              shp <- subarray_shape(sub)
-              if (!is.list(value)) { 
-                if (is.array(value) || is.vector(value)) {
-                  value <- list(value) 
-                } else {
-                  stop(paste("cannot assign value of type \"", typeof(value), "\""))
+              # check associative assignment
+              for (name in value_names)  {
+                if (!(name %in%  attr_names)) {
+                  stop(paste("invalid array attribute value name: \"", name, "\"")) 
                 }
               }
-              attrs <- tiledb::attrs(schema)
-              # check the list shape / types against attributes
-              value_names <- names(attrs)
-              if (is.null(value_names)) {
-                nvalue <- length(value)
-                nattrs <- length(attrs)
-                if (length(value) != length(attrs)) {
-                  stop(paste("invalid number of attribute values (", nvalue, " != ", nattrs, ")"))
+            }
+            # check that value shapes match the subarray shape
+            # TODO: R doesn't check this and just assigns values that overlap the domain
+            sub_dim <- subarray_dim(subarray)
+            for (i in seq_along(value)) {
+              val <- value[[i]]
+              if (is.vector(val)) {
+                if (length(sub_dim) != 1 || sub_dim[1L] != length(val)) {
+                  stop("value dim does not match array subscript")
+                }
+              } else if (is.array(val)) {
+                if (!all(sub_dim == dim(val))) {
+                  stop("value dim does not match array subscript")
                 }
               } else {
-                # check associative assignment
+                stop(paste("cannot assign value of type \"", typeof(value), "\""))
               }
-              stop("indexing functionality not implemented") 
-             }
+            }
+            qry <- tiledb_query(ctx@ptr, uri, "WRITE") 
+            qry <- tiledb_query_set_layout(qry, "COL_MAJOR")
+            if (is.integral(dom)) {
+              qry <- tiledb_query_set_subarray(qry, as.integer(subarray))
+            } else {
+              qry <- tiledb_query_set_subarray(qry, as.double(subarray))
+            }
+            for (i in seq_along(value)) {
+              qry <- tiledb_query_set_buffer(qry, names(value)[[i]], value[[i]])
+            }
+            qry <- tiledb_query_submit(qry)
+            if (tiledb_query_status(qry) != "COMPLETE") {
+              stop("error in write query") 
+            }
+            return(x);
           })
 
 as.array.Array <- function(x, ...) {
