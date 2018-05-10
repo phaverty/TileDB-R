@@ -76,7 +76,14 @@ test_that("Can read / write a simple 1D vector", {
   
   # scalar indexing
   expect_equal(arr[8], dat[8])
+ 
+  arr[6] <- 1000
+  expect_equal(arr[6], 1000)
   
+  arr[7:10] <- c(97, 98, 99, 100)
+  expect_equal(arr[6:10], as.array(c(1000, 97, 98, 99, 100)))
+  
+   
   teardown({
     unlink(tmp, recursive = TRUE)
   }) 

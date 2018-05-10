@@ -229,6 +229,7 @@ setMethod("[<-", "Array",
             if (tiledb_query_status(qry) != "COMPLETE") {
               stop("error in write query") 
             }
+            qry <- tiledb_query_finalize(qry)
             return(x);
           })
 
