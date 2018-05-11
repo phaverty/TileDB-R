@@ -225,10 +225,10 @@ tiledb_query_type_t _string_to_tiledb_query_type(std::string qtstr) {
 // [[Rcpp::export]]
 NumericVector libtiledb_version() {
   try {
-    auto ver = tiledb::Version::version();
-    return NumericVector::create(_["major"]=ver.major(),
-                                 _["minor"]=ver.minor(),
-                                 _["patch"]=ver.patch());
+    auto ver = tiledb::version();
+    return NumericVector::create(_["major"]=std::get<0>(ver),
+                                 _["minor"]=std::get<1>(ver),
+                                 _["patch"]=std::get<2>(ver));
   } catch (tiledb::TileDBError& err) {
     throw Rcpp::exception(err.what());
   }
@@ -1133,8 +1133,8 @@ std::string _query_status_to_string(tiledb::Query::Status status) {
       return "INPROGRESS";
     case tiledb::Query::Status::INCOMPLETE:
       return "INCOMPLETE";
-    case tiledb::Query::Status::UNDEF:
-      return "UNDEF";
+    case tiledb::Query::Status::UNINITIALIZED:
+      return "UNINITIALIZED";
   }
 }
 
