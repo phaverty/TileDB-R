@@ -26,7 +26,7 @@ tiledb_attr.from_ptr <- function(ptr) {
 #' @export
 tiledb_attr <- function(ctx,
                         name="",
-                        type=c("FLOAT64", "INT32"),
+                        type=c("FLOAT64", "INT32", "UTF8"),
                         compressor=tiledb_compressor(),
                         ncells=1) {
   type = match.arg(type)
